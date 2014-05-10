@@ -1,14 +1,13 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module AI.Localize.ParticleFilter
+module AI.Localization.ParticleFilter
   ( ParticleFilterT
   , runParticleFilterT
   , particleFilterT
-  , module AI.Localize.ParticleFilter.Class
+  , module AI.Localization.ParticleFilter.Class
   ) where
 
 import Control.Arrow
@@ -17,7 +16,7 @@ import Data.Traversable (Traversable)
 import Data.Functor.Identity
 import qualified Data.Traversable as T
 
-import AI.Localize.ParticleFilter.Class
+import AI.Localization.ParticleFilter.Class
 
 --
 -- TypeClasses
@@ -43,11 +42,10 @@ type Particle w a = (w, a)
 
 
 newtype ParticleFilterT d w a m = ParticleFilterT
-  { unParticleFilterT 
-      :: (a -> a) ->
-         (a -> w) ->
-         d (Particle w a) ->
-         m (d (Particle w a)) } 
+  { unParticleFilterT :: (a -> a) ->
+                         (a -> w) ->
+                         d (Particle w a) ->
+                         m (d (Particle w a)) } 
 
 
 runParticleFilterT :: (Weight w, Distrib d (Particle w a), Monad m) => 
@@ -65,17 +63,17 @@ runParticleFilterT = unParticleFilterT
 
 
 particleFilterT :: (Weight w, Distrib d (Particle w a), Monad m) =>
-                   (d (Particle w a) -> m (d (Particle w a))) ->
+                   (d (Particle w a) -> m (Particle w a)) ->
                    ((a -> a) -> a -> m a) ->
                    ((a -> w) -> a -> m w) ->
                    ParticleFilterT d w a m
 particleFilterT resample controlError weighError =
   ParticleFilterT $ \control weigh p0 -> 
-    do p1 <- T.mapM (c control) p0 -- control
-       p2 <- T.mapM (w weigh) p1   -- weigh
-       let p3 = normalizeD p2      -- normalize post-weigh
-       p4 <- resample p3           -- resample
-       return (normalizeD p4)      -- normalize post-resample
+    do p1 <- T.mapM (c control) p0     -- control
+       p2 <- T.mapM (w weigh) p1       -- weigh
+       let p3 = normalizeD p2          -- normalize post-weigh
+       p4 <- T.mapM (r resample p3) p3 -- resample
+       return (normalizeD p4)          -- normalize post-resample
  where
   c control p =
     do a <- controlError control (snd p)
@@ -83,6 +81,7 @@ particleFilterT resample controlError weighError =
   w weigh p =
     do v <- weighError weigh (snd p)
        return (fst p + v, snd p)
+  r resample ps _ = resample ps
 
 
 --
