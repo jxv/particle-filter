@@ -4,7 +4,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module AI.Localization.ParticleFilter
-  ( ParticleFilterT
+  ( particle
+  , ParticleFilterT
   , runParticleFilterT
   , particleFilterT
   , module AI.Localization.ParticleFilter.Class
@@ -41,6 +42,10 @@ class (Traversable d) => Distrib d a where
 type Particle w a = (w, a)
 
 
+particle :: (Weight w) => w -> a -> Particle w a
+particle = (,)
+
+
 newtype ParticleFilterT d w a m = ParticleFilterT
   { unParticleFilterT :: (a -> a) ->
                          (a -> w) ->
@@ -49,10 +54,10 @@ newtype ParticleFilterT d w a m = ParticleFilterT
 
 
 runParticleFilterT :: (Weight w, Distrib d (Particle w a), Monad m) => 
-                      ParticleFilterT d w a m ->
-                      (a -> a) ->
-                      (a -> w) ->
-                      d (Particle w a) -> 
+                      ParticleFilterT d w a m -> 
+                      (a -> a) -> -- | Control function
+                      (a -> w) -> -- | Weigh function
+                      d (Particle w a) ->  -- | Particles
                       m (d (Particle w a))
 runParticleFilterT = unParticleFilterT
 
@@ -63,11 +68,11 @@ runParticleFilterT = unParticleFilterT
 
 
 particleFilterT :: (Weight w, Distrib d (Particle w a), Monad m) =>
-                   (d (Particle w a) -> m (Particle w a)) ->
-                   ((a -> a) -> a -> m a) ->
-                   ((a -> w) -> a -> m w) ->
+                   (d (Particle w a) -> m (Particle w a)) ->  -- | Resample
+                   ((a -> a) -> a -> m a) -> -- | Control error
+                   ((a -> w) -> a -> m w) -> -- | Weigh error
                    ParticleFilterT d w a m
-particleFilterT resample controlError weighError =
+particleFilterT resample control_error weigh_error =
   ParticleFilterT $ \control weigh p0 -> 
     do p1 <- T.mapM (c control) p0     -- control
        p2 <- T.mapM (w weigh) p1       -- weigh
@@ -76,10 +81,10 @@ particleFilterT resample controlError weighError =
        return (normalizeD p4)          -- normalize post-resample
  where
   c control p =
-    do a <- controlError control (snd p)
+    do a <- control_error control (snd p)
        return (fst p, a)
   w weigh p =
-    do v <- weighError weigh (snd p)
+    do v <- weigh_error weigh (snd p)
        return (fst p + v, snd p)
   r resample ps _ = resample ps
 
